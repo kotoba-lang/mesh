@@ -1,0 +1,8 @@
+{:schema "kotoba.repository-role-rules.v0"
+ :this-repo
+ {:name "mesh"
+  :tier :t3
+  :role :runtime
+  :must-not [:compile-language-semantics :grant-placement-authority]
+  :depends-on ["kotoba-lang/kotoba"
+               "kotoba-lang/kotoba-selfhost-contracts"]}}
