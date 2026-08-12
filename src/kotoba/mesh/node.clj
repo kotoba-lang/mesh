@@ -18,8 +18,22 @@
 
   Deliberately NOT deployed to any fleet node by this commit -- it's the
   reference contract + a local, tested proof it works end-to-end, not a
-  production rollout (that is its own, separately-scoped follow-up)."
+  production rollout (that is its own, separately-scoped follow-up).
+
+  ## Where the contract lives
+
+  The url shapes and their statuses are not in this file. They are in
+  `src/kotoba/mesh/route.kotoba`, compiled and shipped as
+  `resources/mesh/oracle/route.kir.edn`, executed by
+  `kotoba.mesh.kotoba-oracle` -- so the contract this namespace's docstring
+  describes is the one that RUNS, not a description of one kept somewhere else
+  (ADR-2608112100). What stays here is everything that is not a decision: the
+  route table, the Chicory dispatch, reading guest memory, writing a socket.
+
+  `compile-route` does NOT delegate, and that is a measurement rather than an
+  omission -- see its docstring."
   (:require [clojure.edn :as edn]
+            [kotoba.mesh.kotoba-oracle :as oracle]
             [kotoba.runtime :as runtime]
             [kotoba.selfhost.contracts :as selfhost]
             [kotoba.wasm-exec :as wasm-exec])
@@ -39,7 +53,15 @@
   argument is not itself a guard (it never rejects an unsafe/ungranted
   program), so a caller that skipped `check` would get a compiled module
   with none of the denylist/capability-policy/affine-capability static
-  checks applied to it."
+  checks applied to it.
+
+  This is the one rule in this namespace that stayed here, and the reason is
+  what the rule IS: an ORDER between two effects (`check` before
+  `wasm-binary`). A guest cannot express it, because a guest cannot call
+  either of them -- it would only ever be handed the booleans they already
+  produced, by which point the order has happened. Delegating that would move
+  the shadow of the rule and leave the rule. So the admission ORDER is host
+  authority by nature, not by backlog."
   [source-path policy-path]
   (let [forms (runtime/read-file source-path :kotoba)
         policy (edn/read-string (slurp policy-path))
@@ -79,7 +101,9 @@
                                         policy)
         result (.apply (.export instance "main") (long-array 0))
         written (aget ^longs result 0)]
-    (when (pos? written)
+    ;; `0 bytes means nothing to answer with` is a rule, and it is the one the
+    ;; 204 rests on, so the shipped core decides it rather than a `pos?` here.
+    (when (oracle/call :route 'answer? [(oracle/i64 written)])
       (wasm-exec/read-memory-string instance (:kotoba.wasm/heap-base wasm) written))))
 
 (defn- respond! [^HttpExchange exchange status ^String body]
@@ -88,33 +112,74 @@
     (with-open [os (.getResponseBody exchange)]
       (.write os bytes))))
 
+(def health-body
+  "The liveness answer. Not a decision the shipped core could make: it names
+  which runtime answered, which is a fact about this host and nothing the
+  contract can derive."
+  "{:status :ok :runtime :kotoba.wasm-exec}")
+
+(defn- error-body
+  "The body for an error outcome.
+
+  `:route-not-bound` and `:not-found` render as `{:error :route-not-bound}` and
+  `{:error :not-found}` -- the outcome the shipped core named, printed. A host
+  table mapping outcomes to bodies would be a second place the vocabulary
+  lives, and it is the second place that drifts."
+  [outcome]
+  (str "{:error " outcome "}"))
+
+(defn respond-to!
+  "Answer one request: ask the shipped core what it is, do the work the answer
+  implies, ask what that outcome is, and write it.
+
+  Every branch the old `cond` had is still here, but none of them is decided
+  here. `request-kind`, `answer?`, `outcome` and `status-for` come from
+  `route.kotoba`; this function looks up a table, runs a guest, and writes
+  bytes. ROUTE->WASM: route string -> `compile-route`'s result map (compiled
+  ONCE at node startup; only the Chicory Instance is fresh per request, see
+  `dispatch`).
+
+  The core is asked unconditionally. There is no `if the artifact loaded`
+  branch, because a missing artifact throws -- a node that quietly served a
+  host copy of the contract would be indistinguishable from one serving the
+  shipped one, which is the whole failure ADR-2608112100 is about. And there is
+  no data condition either: a method and a path are always strings, so unlike
+  `kotoba.crdt.clock` (whose actors may be strings the guest cannot type) there
+  is no input here that the guest cannot take."
+  [route->wasm ^HttpExchange exchange]
+  (let [path (.getPath (.getRequestURI exchange))
+        method (.getRequestMethod exchange)
+        kind (oracle/call :route 'request-kind [method path])
+        wasm (when (= :mesh-dispatch kind)
+               (get route->wasm (oracle/call :route 'mesh-route-name [path])))
+        ;; An unbound route is never dispatched: `wasm` is nil, so nothing runs.
+        answer (when wasm (dispatch wasm))
+        outcome (oracle/call :route 'outcome [kind (some? wasm) (some? answer)])
+        status (oracle/i64-value (oracle/call :route 'status-for [outcome]))]
+    (respond! exchange status
+              (case outcome
+                :health-ok health-body
+                :answer answer
+                :no-answer ""
+                ;; Anything else is an error the core named -- including an
+                ;; outcome added to `route.kotoba` later, which gets its body
+                ;; and its status from the core rather than from a stale branch
+                ;; here.
+                (error-body outcome)))))
+
 (defn handler
-  "The contract itself:
+  "The contract, as served:
      GET  /health              -> 200, node liveness + which runtime answers
      POST /mesh/http/<route>   -> dispatch the wasm ROUTE->WASM has bound to
                                   <route>; 404 if unbound, 204 if the guest
                                   ran but had nothing to answer with.
-  ROUTE->WASM: route string -> `compile-route`'s result map (compiled ONCE
-  at node startup; only the Chicory Instance is fresh per request, see
-  `dispatch`)."
+
+  Stated here for a reader, decided in `route.kotoba`. If the two ever
+  disagree, the one below this line is the comment."
   [route->wasm]
   (reify HttpHandler
     (handle [_ exchange]
-      (let [path (.getPath (.getRequestURI exchange))
-            method (.getRequestMethod exchange)]
-        (cond
-          (and (= "GET" method) (= "/health" path))
-          (respond! exchange 200 "{:status :ok :runtime :kotoba.wasm-exec}")
-
-          (and (= "POST" method) (.startsWith path "/mesh/http/"))
-          (let [route (subs path (count "/mesh/http/"))]
-            (if-let [wasm (get route->wasm route)]
-              (if-let [body (dispatch wasm)]
-                (respond! exchange 200 body)
-                (respond! exchange 204 ""))
-              (respond! exchange 404 "{:error :route-not-bound}")))
-
-          :else (respond! exchange 404 "{:error :not-found}"))))))
+      (respond-to! route->wasm exchange))))
 
 (defn start!
   "Boot an HttpServer on PORT dispatching ROUTE->WASM (see `handler`).
