@@ -17,7 +17,7 @@
         ;; The compiler added for GENERATING that artifact is test-only (see
         ;; :test). What is NOT true here, and is true in the sibling repos this
         ;; seam was copied from, is that no compiler reaches a consumer:
-        ;; measured 2026-08-12, `io.github.kotoba-lang/amu` 3a475011 is
+        ;; measured 2026-08-12, `io.github.kotoba-lang/compiler` 3a475011 is
         ;; already on this repository's runtime classpath, transitively via
         ;; `kotoba`, and it was there before any of this landed. It has to be --
         ;; `kotoba.mesh.node/compile-route` compiles operator-supplied `.kotoba`
@@ -34,7 +34,7 @@
         ;; `drama-profile-test` and `node-test`.
         ;;
         ;; Pinned to the kir the pinned compiler emits for
-        ;; (`io.github.kotoba-lang/amu` 806f5cef declares kotoba-kir
+        ;; (`io.github.kotoba-lang/compiler` 806f5cef declares kotoba-kir
         ;; d58972da). They have to match: KIR is a versioned document, and an
         ;; interpreter reading a shape its emitter did not write is exactly the
         ;; failure the artifact was supposed to remove. Measured 2026-08-12 on
@@ -49,8 +49,8 @@
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
                       {:git/tag "v0.5.1" :git/sha "dfb30dd"}
-                      io.github.kotoba-lang/amu
-                      {:git/url "https://github.com/kotoba-lang/amu.git"
+                      io.github.kotoba-lang/compiler
+                      {:git/url "https://github.com/kotoba-lang/compiler.git"
                        :git/sha "806f5cef7d5bc11ad8ec8514ad6121efc73be6c7"}}
          :main-opts ["-m" "cognitect.test-runner"]
          :exec-fn cognitect.test-runner.api/test}
