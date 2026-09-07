@@ -4,12 +4,28 @@
 ;; classifies a request.
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.4"}
+        ;; a9c9f3fe ("llm/infer: a real provider on this host, not a
+        ;; contract-only declaration") is why this pin moved off b0889462.
+        ;; `llm/infer` -- kotoba-core-contracts capability id 225, host import
+        ;; `llm_infer`, ABI (prompt-ptr prompt-len out-ptr out-cap) ->
+        ;; bytes-written | -1 -- has been in the CONTRACT since
+        ;; ADR-2607062330's addendum, but this host had no implementation of
+        ;; it: at b0889462 `kotoba.runtime/op->kind` has no 'llm-infer and
+        ;; `kotoba.wasm-exec/real-op-effects` has no body for one, so a mesh
+        ;; guest importing `llm_infer` could not be instantiated at all.
+        ;; a9c9f3fe supplies both halves (the kotoba-lang pin it carries,
+        ;; 13a8d52, registers :host/llm-infer in effect-for-kind -- without
+        ;; THAT, a granted call is denied :unsupported-kind at run time while
+        ;; every compile-time capability test stays green).
         io.github.kotoba-lang/kotoba
         {:git/url "https://github.com/kotoba-lang/kotoba.git"
-         :git/sha "b088946215085d56cbd64e1a6e19729f0308dcfe"}
+         :git/sha "a9c9f3feb859e212f55b3e6a37a67d88cfa07663"}
+        ;; Moved with `kotoba` above, not independently: at ea3bc823 the new
+        ;; `kotoba.launcher` cannot load (`kotoba/selfhost/analyzer` is not on
+        ;; the classpath). This is the sha a9c9f3fe itself declares.
         io.github.kotoba-lang/kotoba-selfhost-contracts
         {:git/url "https://github.com/kotoba-lang/kotoba-selfhost-contracts.git"
-         :git/sha "ea3bc8233720ad81ea0b6e2387e45dabc9231a7f"}
+         :git/sha "5e46bdcf4e8374584f2da03e909232be099315f8"}
         ;; The KIR interpreter is a RUNTIME dependency: it is what makes
         ;; `src/kotoba/mesh/route.kotoba` the thing that RUNS rather than
         ;; something a test compares against.
@@ -17,41 +33,61 @@
         ;; The compiler added for GENERATING that artifact is test-only (see
         ;; :test). What is NOT true here, and is true in the sibling repos this
         ;; seam was copied from, is that no compiler reaches a consumer:
-        ;; measured 2026-08-12, `io.github.kotoba-lang/compiler` 3a475011 is
-        ;; already on this repository's runtime classpath, transitively via
-        ;; `kotoba`, and it was there before any of this landed. It has to be --
-        ;; `kotoba.mesh.node/compile-route` compiles operator-supplied `.kotoba`
-        ;; routes at startup, which is what this repository IS. So the rule kept
-        ;; here is the narrower true one: the compiler that produced the shipped
-        ;; artifact is test-only, and nothing at runtime compiles a decision
-        ;; core.
+        ;; `io.github.kotoba-lang/amu` (the repository formerly published as
+        ;; `io.github.kotoba-lang/compiler` -- same repository, renamed, so the
+        ;; old shas still resolve under the new coordinate) is already on this
+        ;; repository's runtime classpath, transitively via `kotoba`, and it
+        ;; was there before any of this landed. It has to be --
+        ;; `kotoba.mesh.node/compile-route` compiles operator-supplied
+        ;; `.kotoba` routes at startup, which is what this repository IS. So
+        ;; the rule kept here is the narrower true one: the compiler that
+        ;; produced the shipped artifact is test-only, and nothing at runtime
+        ;; compiles a decision core.
         ;;
-        ;; Adding this pin MOVED the version the rest of the tree resolves:
-        ;; kotoba-kir went d968c01c -> d58972da (`:use-top`). Safe, and measured
-        ;; rather than assumed -- `kotoba` itself references `kotoba.kir` in
-        ;; zero files, so the legacy compile/emit/Chicory path does not read KIR
-        ;; at all, and that whole path is exercised green by
-        ;; `drama-profile-test` and `node-test`.
+        ;; This pin MUST match the compiler the emitter half is pinned to: KIR
+        ;; is a versioned document, and an interpreter reading a shape its
+        ;; emitter did not write is exactly the failure the artifact was
+        ;; supposed to remove. b021a0d1 is the sha `amu` ffd9adfa declares.
         ;;
-        ;; Pinned to the kir the pinned compiler emits for
-        ;; (`io.github.kotoba-lang/compiler` 806f5cef declares kotoba-kir
-        ;; d58972da). They have to match: KIR is a versioned document, and an
-        ;; interpreter reading a shape its emitter did not write is exactly the
-        ;; failure the artifact was supposed to remove. Measured 2026-08-12 on
-        ;; a sibling repository: mixing a newer interpreter under an older
-        ;; compiler produced 1 failure / 32 errors, and advancing the compiler
-        ;; instead is a source-level language migration (`string=?` returns
-        ;; :i64 at this pin and :bool on compiler main), not a pin bump.
+        ;; The three failure modes here are all MEASURED rather than assumed,
+        ;; 2026-09-07, advancing `kotoba` b0889462 -> a9c9f3fe:
+        ;;
+        ;;  - kotoba a9c9f3fe with kotoba-kir left at d58972da: the whole suite
+        ;;    fails to load -- `No such var: kir/host-stack-exhausted?` at
+        ;;    kotoba/compiler/frontend.cljc:1937. A newer emitter cannot read
+        ;;    an older interpreter's namespace either; the pin is not one-way.
+        ;;  - the two pins advanced together, and the `:test` compiler key left
+        ;;    spelled `compiler` while `kotoba` brings `amu`: TWO copies of
+        ;;    `kotoba.compiler.*` on one classpath at different shas. Hence the
+        ;;    single `amu` key below rather than a second spelling.
+        ;;  - the language-migration warning this comment used to carry
+        ;;    ("advancing the compiler is a source-level migration, `string=?`
+        ;;    returns :i64 at this pin and :bool on compiler main") does NOT
+        ;;    hold for THIS repository's core: measured at the pins above,
+        ;;    `the-shipped-artifact-is-the-current-source-compiled` passes with
+        ;;    `route.kotoba` unedited and `route.kir.edn` unregenerated -- the
+        ;;    fresh compile is byte-identical to the shipped artifact. The
+        ;;    warning was inherited from a sibling repository, and it was never
+        ;;    measured here. It stays deleted rather than restated.
+        ;;
+        ;; What the advance DID change, and it is not the language: the
+        ;; compiler now writes an 8-byte allocation header before every bump
+        ;; allocation (`kotoba.runtime/allocation-header-bytes`, a var that
+        ;; does not exist at b0889462). `kotoba.mesh.node/dispatch` reads the
+        ;; guest's answer at that offset now; before the fix all four
+        ;; drama-profile assertions returned a body starting `BTOK`.
         io.github.kotoba-lang/kotoba-kir
         {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
-         :git/sha "d58972da61758584a5bec0e863bcb3ea6fdd6c64"}}
+         :git/sha "b021a0d179fb983e8ad7da702252cfa764cd2fc2"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
                       {:git/tag "v0.5.1" :git/sha "dfb30dd"}
-                      io.github.kotoba-lang/compiler
-                      {:git/url "https://github.com/kotoba-lang/compiler.git"
-                       :git/sha "806f5cef7d5bc11ad8ec8514ad6121efc73be6c7"}}
+                      ;; Same sha `kotoba` a9c9f3fe declares. One spelling, one
+                      ;; copy -- see the note on kotoba-kir above.
+                      io.github.kotoba-lang/amu
+                      {:git/url "https://github.com/kotoba-lang/amu.git"
+                       :git/sha "ffd9adfa0ea73a0a17043419521d74c299dc628f"}}
          :main-opts ["-m" "cognitect.test-runner"]
          :exec-fn cognitect.test-runner.api/test}
   ;; Regenerate the shipped decision-core KIR. Combine with :test, which is
