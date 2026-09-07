@@ -78,13 +78,55 @@
                          :kotoba.mesh-node/wasm wasm})))
       (assoc wasm :kotoba.mesh-node/policy policy))))
 
+(defn llm-host-functions
+  "The `llm_infer` host import (kotoba-core-contracts capability id 225, ABI
+  (prompt-ptr prompt-len out-ptr out-cap) -> bytes-written | -1), guarded
+  exactly as the kgraph-* ones are.
+
+  Built by handing ONE entry of `kotoba.wasm-exec/real-op-effects` to
+  `kotoba.wasm-exec/guarded-host-functions` -- the same generic
+  effects->HostFunctions step `real-host-functions` uses, so every call goes
+  through `guard-host-call`: fail-closed, receipted, checked per call against
+  POLICY. Nothing here reimplements that wiring, and there is no unguarded
+  path: a guest whose policy does not grant `:llm/infer` is refused before the
+  provider body runs, with `:kotoba.host/denied :empty-intersection`.
+
+  `select-keys` rather than `real-host-functions` deliberately. That function
+  wires the WHOLE real provider surface -- filesystem, http-fetch/http-post,
+  clipboard, keychain, the append log. Binding all of it here would widen this
+  node's host surface far past the one import this change is about, and the
+  guard would then be the only thing between an operator-supplied route and a
+  sandboxed filesystem. One op is asked for, one op is bound.
+
+  LLM-CLIENT is `{:infer-fn (fn [prompt] -> String|nil)}` or nil. NIL IS A
+  REAL, SUPPORTED VALUE: `kotoba.wasm-exec/default-host-state` ships
+  `:llm-client` as nil on purpose, because an LLM client is outbound network
+  authority plus a credential rather than an inert sandbox this host can
+  manufacture. With none injected a GRANTED call returns -1 and makes no
+  network call at all -- the same in-band answer the guest gets for a missing
+  key or a transport error, which is the point: it cannot probe the host's
+  credential state.
+
+  The state map passed to `real-op-effects` is minimal rather than
+  `default-host-state`, and the reason is per-request cost: `default-host-state`
+  creates a temp directory for the filesystem sandbox on every call, and
+  `dispatch` runs per HTTP request. The `llm-infer` body reads exactly two keys
+  out of that map -- `:llm-client` and `:http-max-response-bytes`, the latter
+  with its own 1 MiB default -- and the ops that read the rest are the ones
+  `select-keys` drops."
+  [llm-client policy]
+  (wasm-exec/guarded-host-functions
+   (select-keys (wasm-exec/real-op-effects {:llm-client llm-client})
+                ['llm-infer])
+   policy))
+
 (defn dispatch
   "Run WASM's `main` through a FRESH Chicory Instance (its own kgraph STORE
-  atom, seeded empty) and return whatever it wrote to its `kgraph_query`
-  buffer, or nil if it never queried (an assert-only guest has nothing to
-  answer with). No state survives across calls in this reference node --
-  a real deployment would inject a shared/persistent store instead of a
-  fresh atom per dispatch (follow-up, out of this ADR's scope).
+  atom, seeded empty) and return whatever it wrote to its output buffer, or
+  nil if it never wrote one (an assert-only guest has nothing to answer with).
+  No state survives across calls in this reference node -- a real deployment
+  would inject a shared/persistent store instead of a fresh atom per dispatch
+  (follow-up, out of this ADR's scope).
 
   Both `instantiate` and `kgraph-host-functions` are called with WASM's
   :kotoba.mesh-node/policy (set by `compile-route`), which routes every
@@ -92,19 +134,44 @@
   guard (`kotoba.wasm-exec/guard-host-call`) the interpreter and `wasm run`
   CLI paths use -- the unguarded 1-arg forms exist only for callers that
   have already fully vetted their WASM bytes some other way, which this
-  node has not (it compiles arbitrary operator-supplied `.kotoba` routes)."
-  [wasm]
-  (let [store (atom [])
-        policy (:kotoba.mesh-node/policy wasm)
-        instance (wasm-exec/instantiate (:kotoba.wasm/binary wasm)
-                                        (wasm-exec/kgraph-host-functions store policy)
-                                        policy)
-        result (.apply (.export instance "main") (long-array 0))
-        written (aget ^longs result 0)]
-    ;; `0 bytes means nothing to answer with` is a rule, and it is the one the
-    ;; 204 rests on, so the shipped core decides it rather than a `pos?` here.
-    (when (oracle/call :route 'answer? [(oracle/i64 written)])
-      (wasm-exec/read-memory-string instance (:kotoba.wasm/heap-base wasm) written))))
+  node has not (it compiles arbitrary operator-supplied `.kotoba` routes).
+  `llm-host-functions` is bound the same way, from the same policy.
+
+  OPTS carries `:llm-client` (see `llm-host-functions`). The 1-arity is
+  `{:llm-client nil}`: a node configured with no client still SERVES the
+  import -- a granted guest runs and sees -1 -- rather than failing to
+  instantiate. Binding the import unconditionally is what makes those two
+  outcomes distinguishable; a node that bound it only when a client existed
+  would answer a missing client with a link error instead.
+
+  Chicory links imports by (module, field), so host functions a module does
+  not declare are simply unused: `mesh_drama_profile.kotoba`, which imports
+  no `llm_infer`, is unaffected by the extra binding.
+
+  The answer is read at heap base + `kotoba.runtime/allocation-header-bytes`.
+  The compiler writes an 8-byte header before every bump allocation, so the
+  guest's first `alloc` returns that offset, not the heap base itself -- read
+  at the base instead and the body comes back as the header (`BTOK...`)
+  followed by a truncated payload, which is what all four drama-profile
+  assertions did when the pin advanced and this line had not."
+  ([wasm] (dispatch wasm nil))
+  ([wasm {:keys [llm-client]}]
+   (let [store (atom [])
+         policy (:kotoba.mesh-node/policy wasm)
+         instance (wasm-exec/instantiate
+                   (:kotoba.wasm/binary wasm)
+                   (into (vec (wasm-exec/kgraph-host-functions store policy))
+                         (llm-host-functions llm-client policy))
+                   policy)
+         result (.apply (.export instance "main") (long-array 0))
+         written (aget ^longs result 0)]
+     ;; `0 bytes means nothing to answer with` is a rule, and it is the one the
+     ;; 204 rests on, so the shipped core decides it rather than a `pos?` here.
+     (when (oracle/call :route 'answer? [(oracle/i64 written)])
+       (wasm-exec/read-memory-string instance
+                                     (+ (:kotoba.wasm/heap-base wasm)
+                                        runtime/allocation-header-bytes)
+                                     written)))))
 
 (defn- respond! [^HttpExchange exchange status ^String body]
   (let [bytes (.getBytes body "UTF-8")]
@@ -145,27 +212,35 @@
   shipped one, which is the whole failure ADR-2608112100 is about. And there is
   no data condition either: a method and a path are always strings, so unlike
   `kotoba.crdt.clock` (whose actors may be strings the guest cannot type) there
-  is no input here that the guest cannot take."
-  [route->wasm ^HttpExchange exchange]
-  (let [path (.getPath (.getRequestURI exchange))
-        method (.getRequestMethod exchange)
-        kind (oracle/call :route 'request-kind [method path])
-        wasm (when (= :mesh-dispatch kind)
-               (get route->wasm (oracle/call :route 'mesh-route-name [path])))
-        ;; An unbound route is never dispatched: `wasm` is nil, so nothing runs.
-        answer (when wasm (dispatch wasm))
-        outcome (oracle/call :route 'outcome [kind (some? wasm) (some? answer)])
-        status (oracle/i64-value (oracle/call :route 'status-for [outcome]))]
-    (respond! exchange status
-              (case outcome
-                :health-ok health-body
-                :answer answer
-                :no-answer ""
-                ;; Anything else is an error the core named -- including an
-                ;; outcome added to `route.kotoba` later, which gets its body
-                ;; and its status from the core rather than from a stale branch
-                ;; here.
-                (error-body outcome)))))
+  is no input here that the guest cannot take.
+
+  OPTS is `dispatch`'s -- today only `:llm-client`. It is threaded rather than
+  read from anywhere ambient: the client is host configuration a node is given,
+  never something this namespace goes and finds. Nothing in this repository
+  reads an API key or names a provider endpoint; an operator hands one in at
+  `start!` (murakumo's own OpenAI-compatible boundary, for instance) and this
+  code never learns what it is."
+  ([route->wasm ^HttpExchange exchange] (respond-to! route->wasm nil exchange))
+  ([route->wasm opts ^HttpExchange exchange]
+   (let [path (.getPath (.getRequestURI exchange))
+         method (.getRequestMethod exchange)
+         kind (oracle/call :route 'request-kind [method path])
+         wasm (when (= :mesh-dispatch kind)
+                (get route->wasm (oracle/call :route 'mesh-route-name [path])))
+         ;; An unbound route is never dispatched: `wasm` is nil, so nothing runs.
+         answer (when wasm (dispatch wasm opts))
+         outcome (oracle/call :route 'outcome [kind (some? wasm) (some? answer)])
+         status (oracle/i64-value (oracle/call :route 'status-for [outcome]))]
+     (respond! exchange status
+               (case outcome
+                 :health-ok health-body
+                 :answer answer
+                 :no-answer ""
+                 ;; Anything else is an error the core named -- including an
+                 ;; outcome added to `route.kotoba` later, which gets its body
+                 ;; and its status from the core rather than from a stale branch
+                 ;; here.
+                 (error-body outcome))))))
 
 (defn handler
   "The contract, as served:
@@ -175,18 +250,27 @@
                                   ran but had nothing to answer with.
 
   Stated here for a reader, decided in `route.kotoba`. If the two ever
-  disagree, the one below this line is the comment."
-  [route->wasm]
-  (reify HttpHandler
-    (handle [_ exchange]
-      (respond-to! route->wasm exchange))))
+  disagree, the one below this line is the comment.
+
+  OPTS as `respond-to!`."
+  ([route->wasm] (handler route->wasm nil))
+  ([route->wasm opts]
+   (reify HttpHandler
+     (handle [_ exchange]
+       (respond-to! route->wasm opts exchange)))))
 
 (defn start!
   "Boot an HttpServer on PORT dispatching ROUTE->WASM (see `handler`).
-  Returns the HttpServer; caller shuts down with `(.stop server 0)`."
-  [route->wasm port]
-  (let [server (HttpServer/create (InetSocketAddress. (int port)) 0)]
-    (.createContext server "/" (handler route->wasm))
-    (.setExecutor server nil)
-    (.start server)
-    server))
+  Returns the HttpServer; caller shuts down with `(.stop server 0)`.
+
+  OPTS (3-arity) is host configuration, today `{:llm-client {:infer-fn ...}}`
+  -- the ONE place an `llm/infer` provider enters this node. See
+  `llm-host-functions` for why nil is a supported value and what a granted
+  guest sees without one."
+  ([route->wasm port] (start! route->wasm port nil))
+  ([route->wasm port opts]
+   (let [server (HttpServer/create (InetSocketAddress. (int port)) 0)]
+     (.createContext server "/" (handler route->wasm opts))
+     (.setExecutor server nil)
+     (.start server)
+     server)))

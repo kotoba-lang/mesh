@@ -27,7 +27,17 @@
                                           policy)
           result (.apply (.export instance "main") (long-array 0))
           written (aget ^longs result 0)
-          buf-ptr (:kotoba.wasm/heap-base wasm)]
+          ;; Heap base + the allocation header, not the heap base itself.
+          ;; The compiler writes an 8-byte header before every bump
+          ;; allocation (`kotoba.runtime/allocation-header-bytes`, a var that
+          ;; did not exist at the previous `kotoba` pin), so the guest's
+          ;; `(alloc 128)` returns this offset. Read at the base and the
+          ;; assertion below comes back `BTOK...` -- the header, followed by a
+          ;; payload short by 8 bytes. `kotoba.mesh.node/dispatch` reads at the
+          ;; same offset for the same reason; this test does its own read
+          ;; because it deliberately runs in-process rather than through the
+          ;; node.
+          buf-ptr (+ (:kotoba.wasm/heap-base wasm) runtime/allocation-header-bytes)]
       (is (:kotoba.runtime/ok? checked) "static capability check admits :graph/kotoba")
       (is (:kotoba.wasm/ok? wasm))
       (is (pos? written) "kgraph_query wrote a real result into the guest buffer")
