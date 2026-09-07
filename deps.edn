@@ -76,8 +76,8 @@
         ;; does not exist at b0889462). `kotoba.mesh.node/dispatch` reads the
         ;; guest's answer at that offset now; before the fix all four
         ;; drama-profile assertions returned a body starting `BTOK`.
-        io.github.kotoba-lang/kotoba-kir
-        {:git/url "https://github.com/kotoba-lang/kotoba-kir.git"
+        io.github.kotoba-lang/osaho
+        {:git/url "https://github.com/kotoba-lang/osaho.git"
          :git/sha "b021a0d179fb983e8ad7da702252cfa764cd2fc2"}}
  :aliases
  {:test {:extra-paths ["test"]
