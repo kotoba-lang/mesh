@@ -29,7 +29,7 @@ What stayed in the host, and why:
 | which host imports are bound, and the `:llm-client` behind `llm_infer` | an LLM client is outbound network authority plus a credential. It is host configuration a node is *given*, never something a guest can name — see below |
 
 Two gates exist that a behavioural test cannot replace
-(`test/kotoba/mesh/kotoba_oracle_test.clj`):
+(`test/kotoba/mesh/kotoba_oracle_test.cljk`):
 
 - **drift** — the shipped artifact is the current source, compiled. The
   existing suite never reads the artifact, so without this a stale one is
@@ -45,7 +45,7 @@ Two gates exist that a behavioural test cannot replace
 
 A guest running here can call `llm_infer` (kotoba-core-contracts capability id
 225, ABI `(prompt-ptr prompt-len out-ptr out-cap) -> bytes-written | -1`).
-`examples/mesh_llm_answer.kotoba` does, and `test/kotoba/mesh/llm_infer_test.clj`
+`examples/mesh_llm_answer.kotoba` does, and `test/kotoba/mesh/llm_infer_test.cljk`
 drives it over a real socket. Before this, `dispatch` bound only the kgraph-*
 imports, so such a guest could not even be instantiated — Chicory links by
 (module, field) and `.build` throws on an unsatisfied import.
