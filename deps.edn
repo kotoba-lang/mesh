@@ -93,7 +93,7 @@
   ;; Regenerate the shipped decision-core KIR. Combine with :test, which is
   ;; where the compiler lives:
   ;;
-  ;;   clojure -M:test:gen
+  ;;   kbb -M:test:gen
   :gen {:main-opts ["-m" "kotoba.mesh.kotoba-oracle-gen"]}
   :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
          :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
