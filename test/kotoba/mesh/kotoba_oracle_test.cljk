@@ -55,7 +55,7 @@
             fresh (:kir (compiler/compile-source (slurp (io/file "src" source))
                                                  gen/target {}))]
         (is (= fresh shipped)
-            (str "shipped KIR for " id " is stale -- run `clojure -M:test:gen`"))))))
+            (str "shipped KIR for " id " is stale -- run `kbb -M:test:gen`"))))))
 
 (deftest every-declared-core-actually-ships
   (doseq [id (keys oracle/cores)]

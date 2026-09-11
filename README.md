@@ -102,13 +102,13 @@ fresh by `compile-route`.
 ## Test
 
 ```sh
-clojure -M:test
-clojure -M:lint
+kbb -M:test
+kbb -M:lint
 ```
 
 Regenerate the shipped decision core after editing `route.kotoba` (the compiler
 lives in `:test`, so it never reaches a consumer):
 
 ```sh
-clojure -M:test:gen
+kbb -M:test:gen
 ```
