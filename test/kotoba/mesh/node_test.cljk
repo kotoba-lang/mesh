@@ -4,7 +4,7 @@
   an in-process handler call) serving the REAL compiled
   `mesh_drama_profile.kotoba` guest, exactly as an operator (or eventually
   murakumo) would reach it."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.mesh.node :as mesh-node])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers

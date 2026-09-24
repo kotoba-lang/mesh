@@ -7,7 +7,7 @@
   kotoba.wasm-exec-test's own kgraph round-trip test, applied to a real
   application's identity facts instead of a synthetic demo."
   (:require [clojure.edn :as edn]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [kotoba.launcher :as launcher]
             [kotoba.runtime :as runtime]
             [kotoba.wasm-exec :as wasm-exec]))

@@ -3,7 +3,11 @@
 ;; reads `mesh/oracle/route.kir.edn` off the classpath every time the node
 ;; classifies a request.
 {:paths ["src" "resources"]
- :deps {org.clojure/clojure {:mvn/version "1.12.4"}
+ :deps {
+        ;; kotoba.test (clojure.test-compatible surface), not clojure.test --
+        ;; scripts/migrate-clojure-test-to-kotoba-test.cljk. Explicit floor.
+        io.github.kotoba-lang/test {:git/url "https://github.com/kotoba-lang/test.git"
+                                    :git/sha "2ab4885f99fd25552d380d0f6b0b54c5a72eb7ae"}org.clojure/clojure {:mvn/version "1.12.4"}
         ;; a9c9f3fe ("llm/infer: a real provider on this host, not a
         ;; contract-only declaration") is why this pin moved off b0889462.
         ;; `llm/infer` -- kotoba-core-contracts capability id 225, host import

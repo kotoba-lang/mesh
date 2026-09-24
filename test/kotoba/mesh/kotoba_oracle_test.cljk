@@ -18,7 +18,7 @@
   operator uses."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.test :refer [deftest is testing use-fixtures]]
+            [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.compiler.core :as compiler]
             [kotoba.mesh.kotoba-oracle :as oracle]
             [kotoba.mesh.kotoba-oracle-gen :as gen]

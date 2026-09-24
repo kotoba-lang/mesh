@@ -23,7 +23,7 @@
   ships `:llm-client` as nil on purpose, and every client below is a
   recording stub -- which is also what lets the negative tests distinguish
   `refused before the provider ran` from `ran and found nothing`."
-  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+  (:require [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.lang.capability-values :as capability-values]
             [kotoba.mesh.node :as mesh-node]
             [kotoba.runtime :as runtime]
