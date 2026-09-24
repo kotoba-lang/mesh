@@ -16,7 +16,7 @@
   only question that separates them -- register a core that answers differently
   and see whether the SERVER follows, over real HTTP, on the same path an
   operator uses."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [clojure.java.io :as io]
             [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.compiler.core :as compiler]

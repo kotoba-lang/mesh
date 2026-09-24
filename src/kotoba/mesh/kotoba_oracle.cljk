@@ -42,7 +42,7 @@
   is stated ahead of a consumer rather than discovered by one."
   (:require [kotoba.kir :as kir]
             ;; Both only exist on the branch that has a classpath to read from.
-            #?@(:clj [[clojure.edn :as edn]
+            #?@(:clj [[kotoba.lang.edn :as edn]
                       [clojure.java.io :as io]])))
 
 (def cores
