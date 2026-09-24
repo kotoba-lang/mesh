@@ -32,7 +32,7 @@
 
   `compile-route` does NOT delegate, and that is a measurement rather than an
   omission -- see its docstring."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [kotoba.mesh.kotoba-oracle :as oracle]
             [kotoba.runtime :as runtime]
             [kotoba.selfhost.contracts :as selfhost]
