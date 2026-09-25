@@ -23,7 +23,7 @@
   ships `:llm-client` as nil on purpose, and every client below is a
   recording stub -- which is also what lets the negative tests distinguish
   `refused before the provider ran` from `ran and found nothing`."
-  (:require [kotoba.test :refer [deftest is testing use-fixtures]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.lang.capability-values :as capability-values]
             [kotoba.mesh.node :as mesh-node]
             [kotoba.runtime :as runtime]
@@ -167,7 +167,7 @@
           thrown (try (mesh-node/dispatch
                        wasm {:llm-client (stub-client ungranted-seen "should not be reached")})
                       nil
-                      (catch clojure.lang.ExceptionInfo e e))]
+                      (catch kerror/ExceptionInfo e e))]
       (is (some? thrown) "an ungranted llm_infer call must not succeed")
       (is (= :empty-intersection (:kotoba.host/denied (ex-data thrown)))
           "denied for the absent grant, not for some other reason")
@@ -186,7 +186,7 @@
             problem the static checker names."
     (let [err (try (mesh-node/compile-route source "examples/deny_policy.edn")
                    nil
-                   (catch clojure.lang.ExceptionInfo e e))]
+                   (catch kerror/ExceptionInfo e e))]
       (is (some? err))
       (is (= source (:kotoba.mesh-node/source (ex-data err))))
       (is (= "kotoba.mesh-node: safe-subset/capability check failed" (ex-message err))
@@ -213,7 +213,7 @@
     (let [ok-seen (atom [])
           outcome (try {:answer (mesh-node/dispatch
                                  (compiled) {:llm-client (stub-client ok-seen "ok")})}
-                       (catch clojure.lang.ExceptionInfo e
+                       (catch kerror/ExceptionInfo e
                          {:denied (:kotoba.host/denied (ex-data e))}))]
       (is (not= :unsupported-kind (:denied outcome))
           "the granted call was denied :unsupported-kind -- op->kind knows the
