@@ -4,7 +4,7 @@
   an in-process handler call) serving the REAL compiled
   `mesh_drama_profile.kotoba` guest, exactly as an operator (or eventually
   murakumo) would reach it."
-  (:require [kotoba.test :refer [deftest is testing use-fixtures]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.test :refer [deftest is testing use-fixtures]]
             [kotoba.mesh.node :as mesh-node])
   (:import [java.net URI]
            [java.net.http HttpClient HttpRequest HttpRequest$BodyPublishers
@@ -83,7 +83,7 @@
                 (mesh-node/compile-route "examples/mesh_bad_route.kotoba"
                                          "examples/mesh_drama_profile_policy.edn")
                 nil
-                (catch clojure.lang.ExceptionInfo e e))]
+                (catch kerror/ExceptionInfo e e))]
       (is (some? err))
       (is (= "examples/mesh_bad_route.kotoba" (:kotoba.mesh-node/source (ex-data err))))
       (is (= "kotoba.mesh-node: safe-subset/capability check failed" (ex-message err)))
@@ -106,7 +106,7 @@
                 (mesh-node/compile-route "examples/mesh_drama_profile.kotoba"
                                          "examples/deny_policy.edn")
                 nil
-                (catch clojure.lang.ExceptionInfo e e))]
+                (catch kerror/ExceptionInfo e e))]
       (is (some? err))
       (is (= "examples/mesh_drama_profile.kotoba" (:kotoba.mesh-node/source (ex-data err))))
       (is (false? (get-in (ex-data err) [:kotoba.runtime/result :kotoba.runtime/ok?]))
