@@ -13,7 +13,7 @@
 ;; kototama's actor:host ABI (crypto/http/llm/log — a different vocabulary,
 ;; ADR-2607082400). kgraph-assert!/kgraph-query IS the same concept under
 ;; kotoba-lang/kotoba's OWN in-memory EAVT graph (the language's kgraph,
-;; ADR-2606271600 note in CLAUDE.md: "旧称KQEは現行実装ではkgraphに改称")
+;; ADR-2606271600 note in AGENTS.md: "旧称KQEは現行実装ではkgraphに改称")
 ;; — reusing it here, rather than inventing a duplicate capability in
 ;; kototama, is exactly what ADR-2607022700 ("no semantic authority
 ;; duplication") requires.
